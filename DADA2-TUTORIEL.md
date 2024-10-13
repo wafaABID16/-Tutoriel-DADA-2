@@ -2,6 +2,8 @@ Tutoriel DADA2
 ================
 
 ``` r
+# Charger le package dada2 pour l'analyse des données de séquençage
+
 library(dada2); packageVersion("dada2")
 ```
 
@@ -10,6 +12,8 @@ library(dada2); packageVersion("dada2")
     ## [1] '1.28.0'
 
 ``` r
+# Définir le chemin vers le répertoire contenant les fichiers fastq
+
 path <- "~/MiSeq_SOP" # CHANGE ME to the directory containing the fastq files after unzipping.
 list.files(path)
 ```
@@ -39,26 +43,34 @@ list.files(path)
     ## [45] "stability.batch"               "stability.files"
 
 ``` r
-# Forward and reverse fastq filenames have format: SAMPLENAME_R1_001.fastq and SAMPLENAME_R2_001.fastq
+# Les noms des fichiers fastq pour les lectures avant et arrière suivent le format : SAMPLENAME_R1_001.fastq et SAMPLENAME_R2_001.fastq
+
 fnFs <- sort(list.files(path, pattern="_R1_001.fastq", full.names = TRUE))
 fnRs <- sort(list.files(path, pattern="_R2_001.fastq", full.names = TRUE))
-# Extract sample names, assuming filenames have format: SAMPLENAME_XXX.fastq
+# Extraire les noms d'échantillons en supposant que les noms de fichiers ont le format : SAMPLENAME_XXX.fastq
+
 sample.names <- sapply(strsplit(basename(fnFs), "_"), `[`, 1)
 ```
 
 ``` r
+# Visualiser le profil de qualité des deux premiers fichiers R1
+
 plotQualityProfile(fnFs[1:2])
 ```
 
 ![](DADA2-TUTORIEL_files/figure-gfm/unnamed-chunk-4-1.png)<!-- -->
 
 ``` r
+# Visualiser le profil de qualité des deux premiers fichiers R2
+
 plotQualityProfile(fnRs[1:2])
 ```
 
 ![](DADA2-TUTORIEL_files/figure-gfm/unnamed-chunk-5-1.png)<!-- -->
 
 ``` r
+# Définir les chemins pour les fichiers filtrés
+
 filtFs <- file.path(path, "filtered", paste0(sample.names, "_F_filt.fastq.gz"))
 filtRs <- file.path(path, "filtered", paste0(sample.names, "_R_filt.fastq.gz"))
 names(filtFs) <- sample.names
@@ -66,6 +78,8 @@ names(filtRs) <- sample.names
 ```
 
 ``` r
+# Assigner les noms d'échantillons aux fichiers filtrés pour un meilleur suivi
+
 out <- filterAndTrim(fnFs, filtFs, fnRs, filtRs, truncLen=c(240,160),
               maxN=0, maxEE=c(2,2), truncQ=2, rm.phix=TRUE,
               compress=TRUE, multithread=TRUE) # On Windows set multithread=FALSE
@@ -81,18 +95,24 @@ head(out)
     ## F3D144_S210_L001_R1_001.fastq     4827      4312
 
 ``` r
+# Estimer les erreurs dans les lectures avant à partir des fichiers filtrés
+
 errF <- learnErrors(filtFs, multithread=TRUE)
 ```
 
     ## 33514080 total bases in 139642 reads from 20 samples will be used for learning the error rates.
 
 ``` r
+# Estimer les erreurs dans les lectures arrière à partir des fichiers filtrés
+
 errR <- learnErrors(filtRs, multithread=TRUE)
 ```
 
     ## 22342720 total bases in 139642 reads from 20 samples will be used for learning the error rates.
 
 ``` r
+# Visualiser les taux d'erreur estimés pour les lectures avant
+
 plotErrors(errF, nominalQ=TRUE)
 ```
 
@@ -102,6 +122,8 @@ plotErrors(errF, nominalQ=TRUE)
 ![](DADA2-TUTORIEL_files/figure-gfm/unnamed-chunk-10-1.png)<!-- -->
 
 ``` r
+# Appliquer le modèle d'erreur estimé aux lectures avant pour générer des    séquences amplicon
+
 dadaFs <- dada(filtFs, err=errF, multithread=TRUE)
 ```
 
@@ -127,6 +149,8 @@ dadaFs <- dada(filtFs, err=errF, multithread=TRUE)
     ## Sample 20 - 4314 reads in 897 unique sequences.
 
 ``` r
+# Appliquer le modèle d'erreur estimé aux lectures arrière pour générer des séquences amplicon
+
 dadaRs <- dada(filtRs, err=errR, multithread=TRUE)
 ```
 
@@ -152,6 +176,8 @@ dadaRs <- dada(filtRs, err=errR, multithread=TRUE)
     ## Sample 20 - 4314 reads in 732 unique sequences.
 
 ``` r
+# Affiche le résultat du processus DADA appliqué aux lectures avant pour le premier échantillon
+
 dadaFs[[1]]
 ```
 
@@ -160,6 +186,8 @@ dadaFs[[1]]
     ## Key parameters: OMEGA_A = 1e-40, OMEGA_C = 1e-40, BAND_SIZE = 16
 
 ``` r
+# Fusionner les résultats des lectures avant et arrière pour créer des séquences d'amplicon assemblées 
+
 mergers <- mergePairs(dadaFs, filtFs, dadaRs, filtRs, verbose=TRUE)
 ```
 
@@ -204,7 +232,8 @@ mergers <- mergePairs(dadaFs, filtFs, dadaRs, filtRs, verbose=TRUE)
     ## 4269 paired-reads (in 20 unique pairings) successfully merged out of 4281 (in 28 pairings) input.
 
 ``` r
-# Inspect the merger data.frame from the first sample
+# Affiche les premières lignes du dataframe de fusion pour le premier échantillon
+
 head(mergers[[1]])
 ```
 
@@ -224,14 +253,20 @@ head(mergers[[1]])
     ## 6       282       6       5    148         0      0      2   TRUE
 
 ``` r
+#  créer une table de séquence (ASV) à partir des séquences fusionnées
+
 seqtab <- makeSequenceTable(mergers)
+
+# Affiche les dimensions de la table de séquences
+
 dim(seqtab)
 ```
 
     ## [1]  20 293
 
 ``` r
-# Inspect distribution of sequence lengths
+#  Compte le nombre de séquences pour chaque longueur et affiche la distribution
+
 table(nchar(getSequences(seqtab)))
 ```
 
@@ -240,29 +275,48 @@ table(nchar(getSequences(seqtab)))
     ##   1  88 196   6   2
 
 ``` r
+# Identifier et retirer les séquences chimériques (artificielles) basées sur une méthode de consensus
+
 seqtab.nochim <- removeBimeraDenovo(seqtab, method="consensus", multithread=TRUE, verbose=TRUE)
 ```
 
     ## Identified 61 bimeras out of 293 input sequences.
 
 ``` r
+# # Afficher les dimensions de la table de séquences après suppression des chimériques
+
 dim(seqtab.nochim)
 ```
 
     ## [1]  20 232
 
 ``` r
+# Calculer la proportion de séquences non chimériques par rapport à la table de séquences originale
+
 sum(seqtab.nochim)/sum(seqtab)
 ```
 
     ## [1] 0.9640374
 
 ``` r
+# Extraire les séquences uniques à l'aide de la fonction getUniques() et les compter avec la fonction sum()
+
 getN <- function(x) sum(getUniques(x))
+
+## Créer une matrice de suivi avec les statistiques de chaque étape du traitement
+
 track <- cbind(out, sapply(dadaFs, getN), sapply(dadaRs, getN), sapply(mergers, getN), rowSums(seqtab.nochim))
-# If processing a single sample, remove the sapply calls: e.g. replace sapply(dadaFs, getN) with getN(dadaFs)
+
+# Renommer les colonnes de la matrice 'track' avec des descriptions appropriées
+
 colnames(track) <- c("input", "filtered", "denoisedF", "denoisedR", "merged", "nonchim")
+
+# Assigner les noms d'échantillons comme noms de lignes pour la matrice 'track'
+
 rownames(track) <- sample.names
+
+# Affiche les premières lignes de la matrice 'track' pour inspection 
+
 head(track)
 ```
 
@@ -276,25 +330,38 @@ head(track)
 
 ``` r
 # Créer le répertoire "tax" dans ton répertoire personnel (home) s'il n'existe pas
+
 if (!dir.exists("~/tax")) dir.create("~/tax")
 
 # Télécharger le fichier Silva v132 dans le répertoire "tax"
+
 download.file("https://zenodo.org/record/1172783/files/silva_nr_v132_train_set.fa.gz",
               destfile = "~/tax/silva_nr_v132_train_set.fa.gz", method = "auto")
 
 # Vérifier que le fichier a été correctement téléchargé
+
 file.exists("~/tax/silva_nr_v132_train_set.fa.gz")
 ```
 
     ## [1] TRUE
 
 ``` r
+# Assigner la taxonomie aux séquences non chimériques à l'aide d'une base de données de formation SILVA
+
 taxa <- assignTaxonomy(seqtab.nochim, "~/tax/silva_nr_v132_train_set.fa.gz", multithread=TRUE)
 ```
 
 ``` r
-taxa.print <- taxa # Removing sequence rownames for display only
+# Copier les résultats de taxonomie dans une nouvelle variable 
+
+taxa.print <- taxa 
+
+#Retirer les noms de lignes pour l'affichage uniquement
+
 rownames(taxa.print) <- NULL
+
+# Afficher les premières lignes des résultats de taxonomie
+
 head(taxa.print)
 ```
 
@@ -314,6 +381,8 @@ head(taxa.print)
     ## [6,] NA
 
 ``` r
+# Télecharger le package DECIPHER pour le traitement des séquences
+
 library(DECIPHER); packageVersion("DECIPHER")
 ```
 
@@ -372,22 +441,39 @@ library(DECIPHER); packageVersion("DECIPHER")
     ## [1] '2.28.0'
 
 ``` r
+# Extraire les séquences uniques de l'échantillon "Mock"
+
 unqs.mock <- seqtab.nochim["Mock",]
-unqs.mock <- sort(unqs.mock[unqs.mock>0], decreasing=TRUE) # Drop ASVs absent in the Mock
+
+# Conserver uniquement les ASVs présentes, en les triant par ordre décroissant 
+unqs.mock <- sort(unqs.mock[unqs.mock>0], decreasing=TRUE) 
+
+# Afficher le nombre d'ASVs présentes dans la communauté "Mock"
+
 cat("DADA2 inferred", length(unqs.mock), "sample sequences present in the Mock community.\n")
 ```
 
     ## DADA2 inferred 20 sample sequences present in the Mock community.
 
 ``` r
+# Télecharger les séquences de référence à partir d'un fichier FASTA contenant des séquences de la communauté "Mock"
+
 mock.ref <- getSequences(file.path(path, "HMP_MOCK.v35.fasta"))
+
+#Compter le nombre d'ASVs détectées qui correspondent aux séquences de référence
+
 match.ref <- sum(sapply(names(unqs.mock), function(x) any(grepl(x, mock.ref))))
+
+# Afficher le nombre d'ASVs qui correspondent aux séquences de référence
+
 cat("Of those,", sum(match.ref), "were exact matches to the expected reference sequences.\n")
 ```
 
     ## Of those, 20 were exact matches to the expected reference sequences.
 
 ``` r
+# Télecharger le package phyloseq pour l'analyse de la diversité microbienne
+
 library(phyloseq); packageVersion("phyloseq")
 ```
 
@@ -401,44 +487,89 @@ library(phyloseq); packageVersion("phyloseq")
     ## [1] '1.44.0'
 
 ``` r
+# Télécharger le package Biostrings pour la manipulation des séquences biologiques
+
 library(Biostrings); packageVersion("Biostrings")
 ```
 
     ## [1] '2.68.1'
 
 ``` r
+# Télecharger le package ggplot2 pour la visualisation des données
+
 library(ggplot2); packageVersion("ggplot2")
 ```
 
     ## [1] '3.4.3'
 
 ``` r
+# Définir le thème par défaut pour les graphiques ggplot2 à un thème en noir et blanc
+
 theme_set(theme_bw())
 ```
 
 ``` r
+#Extraire les noms des échantillons à partir de la table des séquences non chimériques
+
 samples.out <- rownames(seqtab.nochim)
+
+#Extraire le sujet à partir du nom de l'échantillon, en supposant que le format soit "SOMETHING_D1", "SOMETHING_D2", etc
+
 subject <- sapply(strsplit(samples.out, "D"), `[`, 1)
+
+# Extraire le sexe à partir du nom du sujet
+
 gender <- substr(subject,1,1)
+
+# Extraire l'identifiant du sujet en supprimant la première lettre
+
 subject <- substr(subject,2,999)
+
+#  Extraire le jour à partir du nom de l'échantillon
+
 day <- as.integer(sapply(strsplit(samples.out, "D"), `[`, 2))
+
+# Créer un DataFrame contenant les informations sur les sujets, le sexe et le jour
+
 samdf <- data.frame(Subject=subject, Gender=gender, Day=day)
+
+# Ajouter une colonne "When" pour indiquer si l'échantillon a été collecté tôt ou tard
+
 samdf$When <- "Early"
 samdf$When[samdf$Day>100] <- "Late"
+
+# Définir les noms de lignes du DataFrame pour correspondre aux noms des échantillons
+
 rownames(samdf) <- samples.out
 ```
 
 ``` r
+## Créer un objet phyloseq à partir de la table d'abondance OTU, des données d'échantillon et des données de taxonomie
+
 ps <- phyloseq(otu_table(seqtab.nochim, taxa_are_rows=FALSE), 
                sample_data(samdf), 
                tax_table(taxa))
-ps <- prune_samples(sample_names(ps) != "Mock", ps) # Remove mock sample
+
+#Supprimer l'échantillon "Mock" de l'objet phyloseq
+
+ps <- prune_samples(sample_names(ps) != "Mock", ps) 
 ```
 
 ``` r
+# Créer un objet DNAStringSet à partir des noms des taxons dans l'objet phyloseq
+
 dna <- Biostrings::DNAStringSet(taxa_names(ps))
+
+#Nommer les séquences dans l'objet DNAStringSet avec les noms des taxons
+
 names(dna) <- taxa_names(ps)
+
+# Fusionner l'objet DNAStringSet avec l'objet phyloseq
+
 ps <- merge_phyloseq(ps, dna)
+
+# Renommer les ASVs dans l'objet phyloseq
+
 taxa_names(ps) <- paste0("ASV", seq(ntaxa(ps)))
 ps
 ```
@@ -450,6 +581,8 @@ ps
     ## refseq()      DNAStringSet:      [ 232 reference sequences ]
 
 ``` r
+# Créer un graphique de richesse avec les indices de diversité Shannon et Simpson, en coloriant par le moment de collecte (Early/Late)
+
 plot_richness(ps, x="Day", measures=c("Shannon", "Simpson"), color="When")
 ```
 
@@ -463,59 +596,73 @@ plot_richness(ps, x="Day", measures=c("Shannon", "Simpson"), color="When")
 ![](DADA2-TUTORIEL_files/figure-gfm/unnamed-chunk-33-1.png)<!-- -->
 
 ``` r
-# Transform data to proportions as appropriate for Bray-Curtis distances
+# # Transformer les données en proportions pour le calcul des distances de Bray-Curtis
+
 ps.prop <- transform_sample_counts(ps, function(otu) otu/sum(otu))
+
+# Calculer une ordination NMDS basée sur les distances de Bray-Curtis
+
 ord.nmds.bray <- ordinate(ps.prop, method="NMDS", distance="bray")
 ```
 
     ## Run 0 stress 0.08043117 
-    ## Run 1 stress 0.08076343 
-    ## ... Procrustes: rmse 0.01058184  max resid 0.03258164 
-    ## Run 2 stress 0.08076337 
-    ## ... Procrustes: rmse 0.01050926  max resid 0.03234488 
-    ## Run 3 stress 0.08076337 
-    ## ... Procrustes: rmse 0.01050866  max resid 0.03234313 
-    ## Run 4 stress 0.1010631 
-    ## Run 5 stress 0.09477224 
-    ## Run 6 stress 0.0807634 
-    ## ... Procrustes: rmse 0.01055849  max resid 0.03250543 
-    ## Run 7 stress 0.08076343 
-    ## ... Procrustes: rmse 0.01050306  max resid 0.03232324 
-    ## Run 8 stress 0.08076341 
-    ## ... Procrustes: rmse 0.01057596  max resid 0.03256244 
-    ## Run 9 stress 0.09477199 
-    ## Run 10 stress 0.0947713 
-    ## Run 11 stress 0.08076341 
-    ## ... Procrustes: rmse 0.01055455  max resid 0.03249313 
-    ## Run 12 stress 0.08076336 
-    ## ... Procrustes: rmse 0.01047461  max resid 0.03223179 
-    ## Run 13 stress 0.08043116 
+    ## Run 1 stress 0.08043116 
     ## ... New best solution
-    ## ... Procrustes: rmse 1.392525e-06  max resid 3.408732e-06 
+    ## ... Procrustes: rmse 1.081946e-06  max resid 2.420815e-06 
     ## ... Similar to previous best
-    ## Run 14 stress 0.132615 
-    ## Run 15 stress 0.08076337 
-    ## ... Procrustes: rmse 0.01050927  max resid 0.03234378 
-    ## Run 16 stress 0.08076338 
-    ## ... Procrustes: rmse 0.01052937  max resid 0.03240893 
-    ## Run 17 stress 0.08616061 
-    ## Run 18 stress 0.09477105 
+    ## Run 2 stress 0.08076337 
+    ## ... Procrustes: rmse 0.01049328  max resid 0.03229206 
+    ## Run 3 stress 0.09477198 
+    ## Run 4 stress 0.1432873 
+    ## Run 5 stress 0.08076336 
+    ## ... Procrustes: rmse 0.01048315  max resid 0.03225926 
+    ## Run 6 stress 0.1010631 
+    ## Run 7 stress 0.08076337 
+    ## ... Procrustes: rmse 0.01050296  max resid 0.0323237 
+    ## Run 8 stress 0.1358136 
+    ## Run 9 stress 0.08616061 
+    ## Run 10 stress 0.1010629 
+    ## Run 11 stress 0.08616061 
+    ## Run 12 stress 0.08616061 
+    ## Run 13 stress 0.08616061 
+    ## Run 14 stress 0.08043117 
+    ## ... Procrustes: rmse 6.06345e-06  max resid 1.568702e-05 
+    ## ... Similar to previous best
+    ## Run 15 stress 0.08076341 
+    ## ... Procrustes: rmse 0.01058296  max resid 0.03258477 
+    ## Run 16 stress 0.08076337 
+    ## ... Procrustes: rmse 0.01050059  max resid 0.03231604 
+    ## Run 17 stress 0.1212044 
+    ## Run 18 stress 0.08076338 
+    ## ... Procrustes: rmse 0.01052621  max resid 0.0323993 
     ## Run 19 stress 0.08076337 
-    ## ... Procrustes: rmse 0.01051034  max resid 0.03234732 
-    ## Run 20 stress 0.08076343 
-    ## ... Procrustes: rmse 0.01059619  max resid 0.03262737 
-    ## *** Best solution repeated 1 times
+    ## ... Procrustes: rmse 0.01051393  max resid 0.03235946 
+    ## Run 20 stress 0.09477199 
+    ## *** Best solution repeated 2 times
 
 ``` r
+# Visualiser l'ordination NMDS avec les distances de Bray-Curtis, colorée par "When"
+
 plot_ordination(ps.prop, ord.nmds.bray, color="When", title="Bray NMDS")
 ```
 
 ![](DADA2-TUTORIEL_files/figure-gfm/unnamed-chunk-35-1.png)<!-- -->
 
 ``` r
+# Extraire les noms des 20 OTUs les plus abondants dans l'objet phyloseq
+
 top20 <- names(sort(taxa_sums(ps), decreasing=TRUE))[1:20]
+
+#  Transformer les données d'abondance pour les échantillons en proportions
+
 ps.top20 <- transform_sample_counts(ps, function(OTU) OTU/sum(OTU))
+
+# Prendre uniquement les taxons qui sont dans le top 20
+
 ps.top20 <- prune_taxa(top20, ps.top20)
+
+# Créer un graphique en barres représentant les familles des 20 OTUs les plus abondants, en fonction du jour et du moment de collecte
+
 plot_bar(ps.top20, x="Day", fill="Family") + facet_wrap(~When, scales="free_x")
 ```
 
