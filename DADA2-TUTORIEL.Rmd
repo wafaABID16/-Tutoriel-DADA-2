@@ -3,198 +3,402 @@ title: "Tutoriel DADA2"
 output: github_document
 ---
 ```{r}
+
+# Charger le package dada2 pour l'analyse des données de séquençage
+
 library(dada2); packageVersion("dada2")
 ```
 
 ```{r}
-path <- "~/MiSeq_SOP" # CHANGE ME to the directory containing the fastq files after unzipping.
+
+# Définir le chemin vers le répertoire contenant les fichiers fastq
+
+path <- "~/MiSeq_SOP" 
+
+# Afficher tous les fichiers et répertoires présents dans le chemin spécifié
+
 list.files(path)
 ```
 
 ```{r}
-# Forward and reverse fastq filenames have format: SAMPLENAME_R1_001.fastq and SAMPLENAME_R2_001.fastq
+
+# Récupérer les fichiers FASTQ de lecture avant (R1) qui contiennent "_R1_001.fastq" dans leur nom
+
 fnFs <- sort(list.files(path, pattern="_R1_001.fastq", full.names = TRUE))
+
+# Récupérer les fichiers FASTQ de lecture arrière (R2) qui contiennent "_R2_001.fastq" dans leur nom
+
 fnRs <- sort(list.files(path, pattern="_R2_001.fastq", full.names = TRUE))
-# Extract sample names, assuming filenames have format: SAMPLENAME_XXX.fastq
+
+# Extraire les noms des échantillons en prenant la première partie du nom de fichier, en les séparant par le caractère "_"
+
 sample.names <- sapply(strsplit(basename(fnFs), "_"), `[`, 1)
 ```
 
 ```{r}
+
+# Afficher un graphique des profils de qualité pour les deux premiers fichiers R1 
+
 plotQualityProfile(fnFs[1:2])
 ```
 
 ```{r}
+
+# Afficher un graphique des profils de qualité pour les deux premiers fichiers R2
+
 plotQualityProfile(fnRs[1:2])
 ```
 
 ```{r}
+
+# Définir les chemins des fichiers filtrés pour les lectures avant (R1) en les nommant avec "_F_filt.fastq.gz"
+
 filtFs <- file.path(path, "filtered", paste0(sample.names, "_F_filt.fastq.gz"))
+
+# Définir les chemins des fichiers filtrés pour les lectures arrière (R2) en les nommant avec "_R_filt.fastq.gz"
+
 filtRs <- file.path(path, "filtered", paste0(sample.names, "_R_filt.fastq.gz"))
+
+# Assigner les noms d'échantillons aux fichiers filtrés R1 et R2 pour  faciliter le suivi 
+
 names(filtFs) <- sample.names
 names(filtRs) <- sample.names
 ```
 
 ```{r}
+
+# Appliquer la fonction filterAndTrim avec les paramètres suivants:
+
 out <- filterAndTrim(fnFs, filtFs, fnRs, filtRs, truncLen=c(240,160),
               maxN=0, maxEE=c(2,2), truncQ=2, rm.phix=TRUE,
-              compress=TRUE, multithread=TRUE) # On Windows set multithread=FALSE
+              compress=TRUE, multithread=TRUE)
+
+# Afficher les premières lignes du résultat, montrant le nombre de lectures avant et après le filtrage
+
 head(out)
 ```
 
 ```{r}
+
+# Estimer les erreurs dans les lectures avant à partir des fichiers filtrés
+
 errF <- learnErrors(filtFs, multithread=TRUE)
 ```
 
 ```{r}
+
+# Estimer les erreurs dans les lectures arrière à partir des fichiers filtrés
+
 errR <- learnErrors(filtRs, multithread=TRUE)
 ```
 
 ```{r}
+
+# Visualiser les taux d'erreur estimés pour les lectures avant
+
 plotErrors(errF, nominalQ=TRUE)
 ```
 
 ```{r}
+
+# Appliquer le modèle d'erreur estimé aux lectures avant pour générer des    séquences amplicon
+
 dadaFs <- dada(filtFs, err=errF, multithread=TRUE)
 ```
 
 ```{r}
+
+# Appliquer le modèle d'erreur estimé aux lectures arrière pour générer des séquences amplicon
+
 dadaRs <- dada(filtRs, err=errR, multithread=TRUE)
 ```
 
 ```{r}
+
+# Afficher le résultat du processus DADA appliqué aux lectures avant pour le premier échantillon
+
 dadaFs[[1]]
 ```
 
 ```{r}
+
+# Fusionner les résultats des lectures avant et arrière pour créer des séquences d'amplicon assemblées 
+
 mergers <- mergePairs(dadaFs, filtFs, dadaRs, filtRs, verbose=TRUE)
-# Inspect the merger data.frame from the first sample
+
+# Afficher les premières lignes du dataframe de fusion pour le premier échantillon
+
 head(mergers[[1]])
 ```
 
 ```{r}
+
+# créer une table de séquence (ASV) à partir des séquences fusionnées
+
 seqtab <- makeSequenceTable(mergers)
+
+# Afficher les dimensions de la table de séquences
+
 dim(seqtab)
 ```
 
 ```{r}
-# Inspect distribution of sequence lengths
+
+# Compte le nombre de séquences pour chaque longueur et affiche la distribution
+
 table(nchar(getSequences(seqtab)))
 ```
 
 ```{r}
+
+# Identifier et retirer les séquences chimériques (artificielles) basées sur une méthode de consensus
+
 seqtab.nochim <- removeBimeraDenovo(seqtab, method="consensus", multithread=TRUE, verbose=TRUE)
+
+#  Afficher les dimensions de la table de séquences après suppression des chimériques
+
 dim(seqtab.nochim)
 ```
 
 ```{r}
+
+# Calculer la proportion de séquences non chimériques par rapport à la table de séquences originale
+
 sum(seqtab.nochim)/sum(seqtab)
 ```
 
 ```{r}
+
+# Extraire les séquences uniques à l'aide de la fonction getUniques() et les compter avec la fonction sum()
+
 getN <- function(x) sum(getUniques(x))
+
+# Créer une matrice de suivi avec les statistiques de chaque étape du traitement
+
 track <- cbind(out, sapply(dadaFs, getN), sapply(dadaRs, getN), sapply(mergers, getN), rowSums(seqtab.nochim))
-# If processing a single sample, remove the sapply calls: e.g. replace sapply(dadaFs, getN) with getN(dadaFs)
+
+# Renommer les colonnes de la matrice 'track' avec des descriptions appropriées
+
 colnames(track) <- c("input", "filtered", "denoisedF", "denoisedR", "merged", "nonchim")
+
+# Assigner les noms d'échantillons comme noms de lignes pour la matrice 'track'
+
 rownames(track) <- sample.names
+
+# Afficher les premières lignes de la matrice 'track' pour inspection 
+
 head(track)
 ```
 ```{r}
-# Créer le répertoire "tax" dans ton répertoire personnel (home) s'il n'existe pas
+
+# Créer le répertoire "tax" dans mon répertoire personnel (home) s'il n'existe pas
+
 if (!dir.exists("~/tax")) dir.create("~/tax")
 
 # Télécharger le fichier Silva v132 dans le répertoire "tax"
+
 download.file("https://zenodo.org/record/1172783/files/silva_nr_v132_train_set.fa.gz",
               destfile = "~/tax/silva_nr_v132_train_set.fa.gz", method = "auto")
 
 # Vérifier que le fichier a été correctement téléchargé
+
 file.exists("~/tax/silva_nr_v132_train_set.fa.gz")
 ```
 
 ```{r}
+
+# Assigner la taxonomie aux séquences non chimériques à l'aide d'une base de données de formation SILVA
+
 taxa <- assignTaxonomy(seqtab.nochim, "~/tax/silva_nr_v132_train_set.fa.gz", multithread=TRUE)
 ```
 
 ```{r}
-taxa.print <- taxa # Removing sequence rownames for display only
+
+# Copier les résultats de taxonomie dans une nouvelle variable 
+
+taxa.print <- taxa 
+
+# Retirer les noms de lignes pour l'affichage uniquement
+
 rownames(taxa.print) <- NULL
+
+# Afficher les premières lignes des résultats de taxonomie
+
 head(taxa.print)
 ```
 ```{r}
+
+# Télecharger le package DECIPHER pour le traitement des séquences
+
 library(DECIPHER); packageVersion("DECIPHER")
 
 ```
 
 ```{r}
+
+# Extraire les séquences uniques de l'échantillon "Mock"
+
 unqs.mock <- seqtab.nochim["Mock",]
-unqs.mock <- sort(unqs.mock[unqs.mock>0], decreasing=TRUE) # Drop ASVs absent in the Mock
+
+# Conserver uniquement les ASVs présentes, en les triant par ordre décroissant 
+unqs.mock <- sort(unqs.mock[unqs.mock>0], decreasing=TRUE) 
+
+# Afficher le nombre d'ASVs présentes dans la communauté "Mock"
+
 cat("DADA2 inferred", length(unqs.mock), "sample sequences present in the Mock community.\n")
 ```
 
 ```{r}
+
+# Télecharger les séquences de référence à partir d'un fichier FASTA contenant des séquences de la communauté "Mock"
+
 mock.ref <- getSequences(file.path(path, "HMP_MOCK.v35.fasta"))
+
+# Compter le nombre d'ASVs détectées qui correspondent aux séquences de référence
+
 match.ref <- sum(sapply(names(unqs.mock), function(x) any(grepl(x, mock.ref))))
+
+# Afficher le nombre d'ASVs qui correspondent aux séquences de référence
+
 cat("Of those,", sum(match.ref), "were exact matches to the expected reference sequences.\n")
 
 ```
 ```{r}
+
+# Télecharger le package phyloseq pour l'analyse de la diversité microbienne
+
 library(phyloseq); packageVersion("phyloseq")
 ```
 
 ```{r}
+
+# Télécharger le package Biostrings pour la manipulation des séquences biologiques
+
 library(Biostrings); packageVersion("Biostrings")
 ```
 ```{r}
+
+# Télecharger le package ggplot2 pour la visualisation des données
+
 library(ggplot2); packageVersion("ggplot2")
 ```
 ```{r}
+
+# Définir le thème par défaut pour les graphiques ggplot2 à un thème en noir et blanc
+
 theme_set(theme_bw())
 ```
 
 ```{r}
+
+# Extraire les noms des échantillons à partir de la table des séquences non chimériques
+
 samples.out <- rownames(seqtab.nochim)
+
+# Extraire le sujet à partir du nom de l'échantillon, en supposant que le format soit "SOMETHING_D1", "SOMETHING_D2", etc
+
 subject <- sapply(strsplit(samples.out, "D"), `[`, 1)
+
+# Extraire le sexe à partir du nom du sujet
+
 gender <- substr(subject,1,1)
+
+# Extraire l'identifiant du sujet en supprimant la première lettre
+
 subject <- substr(subject,2,999)
+
+# Extraire le jour à partir du nom de l'échantillon
+
 day <- as.integer(sapply(strsplit(samples.out, "D"), `[`, 2))
+
+# Créer un DataFrame contenant les informations sur les sujets, le sexe et le jour
+
 samdf <- data.frame(Subject=subject, Gender=gender, Day=day)
+
+# Ajouter une colonne "When" pour indiquer si l'échantillon a été collecté tôt ou tard
+
 samdf$When <- "Early"
 samdf$When[samdf$Day>100] <- "Late"
+
+# Définir les noms de lignes du DataFrame pour correspondre aux noms des échantillons
+
 rownames(samdf) <- samples.out
 ```
 
 ```{r}
+
+# Créer un objet phyloseq à partir de la table d'abondance OTU, des données d'échantillon et des données de taxonomie
+
 ps <- phyloseq(otu_table(seqtab.nochim, taxa_are_rows=FALSE), 
                sample_data(samdf), 
                tax_table(taxa))
-ps <- prune_samples(sample_names(ps) != "Mock", ps) # Remove mock sample
+
+# Supprimer l'échantillon "Mock" de l'objet phyloseq
+
+ps <- prune_samples(sample_names(ps) != "Mock", ps) 
 ```
 
 ```{r}
+
+# Créer un objet DNAStringSet à partir des noms des taxons dans l'objet phyloseq
+
 dna <- Biostrings::DNAStringSet(taxa_names(ps))
+
+# Nommer les séquences dans l'objet DNAStringSet avec les noms des taxons
+
 names(dna) <- taxa_names(ps)
+
+# Fusionner l'objet DNAStringSet avec l'objet phyloseq
+
 ps <- merge_phyloseq(ps, dna)
+
+# Renommer les ASVs dans l'objet phyloseq
+
 taxa_names(ps) <- paste0("ASV", seq(ntaxa(ps)))
 ps
 ```
 
 ```{r}
+
+# Créer un graphique de richesse avec les indices de diversité Shannon et Simpson, en coloriant par le moment de collecte (Early/Late)
+
 plot_richness(ps, x="Day", measures=c("Shannon", "Simpson"), color="When")
 ```
 
 ```{r}
-# Transform data to proportions as appropriate for Bray-Curtis distances
+
+# Transformer les données en proportions pour le calcul des distances de Bray-Curtis
+
 ps.prop <- transform_sample_counts(ps, function(otu) otu/sum(otu))
+
+# Calculer une ordination NMDS basée sur les distances de Bray-Curtis
+
 ord.nmds.bray <- ordinate(ps.prop, method="NMDS", distance="bray")
 ```
 
 ```{r}
+
+# Visualiser l'ordination NMDS avec les distances de Bray-Curtis, colorée par "When"
+
 plot_ordination(ps.prop, ord.nmds.bray, color="When", title="Bray NMDS")
 ```
 
 ```{r}
+
+# Extraire les noms des 20 OTUs les plus abondants dans l'objet phyloseq
+
 top20 <- names(sort(taxa_sums(ps), decreasing=TRUE))[1:20]
+
+# Transformer les données d'abondance pour les échantillons en proportions
+
 ps.top20 <- transform_sample_counts(ps, function(OTU) OTU/sum(OTU))
+
+# Prendre uniquement les taxons qui sont dans le top 20
+
 ps.top20 <- prune_taxa(top20, ps.top20)
+
+# Créer un graphique en barres représentant les familles des 20 OTUs les plus abondants, en fonction du jour et du moment de collecte
+
 plot_bar(ps.top20, x="Day", fill="Family") + facet_wrap(~When, scales="free_x")
 ```
 
